@@ -1,3 +1,3 @@
 # translate
 
-[Link](https://tinh-dq.github.io/translate)
+[Link](https://tinh-dq.github.io/translate/)
