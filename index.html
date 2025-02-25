@@ -13,12 +13,14 @@
         background-color: #f3f4f6;
       }
       .container {
-        width: 80%;
-        max-width: 800px;
+        min-width: 80%;
         background: white;
         padding: 20px;
         border-radius: 8px;
         box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        text-align: center;
       }
       table {
         width: 100%;
@@ -29,6 +31,7 @@
         border: 1px solid #ddd;
         padding: 8px;
         text-align: left;
+        width: 24%;
       }
       td.relative {
         position: relative;
@@ -36,8 +39,11 @@
       th {
         background-color: #f0f0f0;
       }
-      td input {
-        width: 97%;
+      td > textarea {
+        width: 100%;
+        height: 100%;
+        border: none;
+        resize: vertical;
       }
       .copy-btn {
         display: none;
@@ -78,7 +84,12 @@
         </thead>
         <tbody id="tableBody">
           <tr>
-            <td><input type="text" oninput="debounceTranslate(this)" /></td>
+            <td>
+              <textarea
+                oninput="debounceTranslate(this)"
+                placeholder="Input text here"
+              ></textarea>
+            </td>
             <td class="relative">
               <span class="translated"></span
               ><button class="copy-btn" onclick="copyText(this)">Copy</button>
@@ -99,8 +110,13 @@
 
     <script>
       let debounceTimeout;
+      function autoResize(textarea) {
+        textarea.style.height = "auto"; // Reset height
+        textarea.style.height = textarea.scrollHeight + "px"; // Set new height
+      }
 
       function debounceTranslate(input) {
+        autoResize(input);
         clearTimeout(debounceTimeout);
         debounceTimeout = setTimeout(() => translateText(input), 1000);
       }
@@ -109,40 +125,77 @@
         const text = input.value.trim();
         if (!text) return;
 
+        const paragraphs = splitTextIntoParagraphs(text);
         const row = input.closest("tr");
         const targetLangs = ["vi", "en", "ko"];
         const translatedCells = row.querySelectorAll(".translated");
 
         for (let i = 0; i < targetLangs.length; i++) {
           translatedCells[i].textContent = "Translating...";
-          try {
-            const translatedText = await fetchTranslation(text, targetLangs[i]);
-            translatedCells[i].textContent = translatedText;
-          } catch (error) {
-            translatedCells[i].textContent = "Error!";
+          let translateHtml = "<p>";
+          for (let j = 0; j < paragraphs.length; j++) {
+            try {
+              const translateTextArray = await fetchTranslation(
+                paragraphs[j],
+                targetLangs[i]
+              );
+              translateHtml += `${translateTextArray.join(" ")}</br>`;
+            } catch (error) {
+              console.log(error);
+            }
           }
+          translateHtml += "</p>";
+          translatedCells[i].innerHTML = translateHtml;
         }
       }
 
-      async function fetchTranslation(text, targetLang) {
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(
-          text
-        )}`;
-        try {
-          const response = await fetch(url);
-          if (!response.ok) throw new Error("API error");
-          const result = await response.json();
-          return result[0][0][0] || "Translation failed";
-        } catch (error) {
-          return "Error";
-        }
+      function splitTextIntoParagraphs(text) {
+        const paragraphs = text.split(/\n/); // Tách đoạn văn bằng dấu xuống dòng
+        const newParagraphs = paragraphs.map((para) => {
+          const sentences = [];
+          let sentenceStart = 0;
+
+          for (let i = 0; i < para.length; i++) {
+            if (
+              [".", "!", "?"].includes(para[i]) &&
+              (i === para.length - 1 || para[i + 1] === " ")
+            ) {
+              sentences.push(para.slice(sentenceStart, i + 1).trim());
+              sentenceStart = i + 2; // Bỏ qua dấu cách sau dấu câu (nếu có)
+            }
+          }
+
+          if (sentenceStart < para.length) {
+            sentences.push(para.slice(sentenceStart).trim()); // Thêm câu cuối cùng nếu còn sót
+          }
+
+          return sentences;
+        });
+
+        return newParagraphs;
+      }
+
+      async function fetchTranslation(sentences, targetLang) {
+        const translations = await Promise.all(
+          sentences.map(async (sentence) => {
+            console.log(sentence);
+            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(
+              sentence
+            )}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("API error");
+            const result = await response.json();
+            return result[0][0][0] || "Translation failed";
+          })
+        );
+        return translations;
       }
 
       function addRow() {
         const tableBody = document.getElementById("tableBody");
         const newRow = document.createElement("tr");
         newRow.innerHTML = `
-                <td><input type="text" oninput="debounceTranslate(this)"></td>
+                <td><textarea oninput="debounceTranslate(this)"></textarea></td>
                 <td class="relative"><span class="translated"></span><button class="copy-btn" onclick="copyText(this)">Copy</button></td>
                 <td class="relative"><span class="translated"></span><button class="copy-btn" onclick="copyText(this)">Copy</button></td>
                 <td class="relative"><span class="translated"></span><button class="copy-btn" onclick="copyText(this)">Copy</button></td>
@@ -151,7 +204,7 @@
       }
 
       function copyText(button) {
-        const text = button.previousElementSibling.textContent;
+        const text = button.previousElementSibling.innerHTML;
         if (text) {
           navigator.clipboard
             .writeText(text)
